@@ -252,6 +252,9 @@ func (handler *authHandler) RequestPasswordReset(responseWriter http.ResponseWri
 		handler.invalidForm(responseWriter)
 		return
 	}
+
+	email = strings.ToLower(strings.TrimSpace(email))
+
 	user, found, err := handler.accounts.FindUserByEmail(request.Context(), email)
 	if err != nil {
 		handler.internalError(responseWriter, request, err)

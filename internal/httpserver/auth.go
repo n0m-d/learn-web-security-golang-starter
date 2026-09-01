@@ -63,6 +63,9 @@ func (handler *authHandler) Login(responseWriter http.ResponseWriter, request *h
 		handler.invalidForm(responseWriter)
 		return
 	}
+
+	email = strings.ToLower(strings.TrimSpace(email))
+
 	password, err := httpx.FormValue(request, "password")
 	if err != nil {
 		handler.invalidForm(responseWriter)
@@ -182,6 +185,9 @@ func (handler *authHandler) Signup(responseWriter http.ResponseWriter, request *
 		handler.internalError(responseWriter, request, err)
 		return
 	}
+
+	email = strings.ToLower(strings.TrimSpace(email))
+
 	user, err := handler.accounts.CreateCustomer(request.Context(), email, displayName, passwordHash)
 	if err != nil {
 		if errors.Is(err, accounts.ErrEmailExists) {
