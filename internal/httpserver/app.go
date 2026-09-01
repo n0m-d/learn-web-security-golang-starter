@@ -213,6 +213,7 @@ func New(database *sql.DB, logger *logging.Logger, options Options) (*Applicatio
 	handler := applyMiddleware(
 		mainMux,
 		recoverPanics(logger, renderer),
+		NoSniff,
 	)
 	return &Application{Handler: handler, publicRoot: publicRoot}, nil
 }

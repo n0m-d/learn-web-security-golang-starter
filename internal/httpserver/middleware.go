@@ -67,3 +67,10 @@ func SearchThrottle(_ *templates.Renderer) func(http.Handler) http.Handler {
 		return next
 	}
 }
+
+func NoSniff(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
+		responseWriter.Header().Set("X-Content-Type-Options", "nosniff") // Prevents browsers from guessing the content type and executing scripts in unexpected ways.
+		next.ServeHTTP(responseWriter, request)
+	})
+}
