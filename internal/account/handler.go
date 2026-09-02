@@ -10,11 +10,14 @@ import (
 
 	"github.com/bootdotdev/learn-web-security/internal/accounts"
 	"github.com/bootdotdev/learn-web-security/internal/auth/mfa"
+	"github.com/bootdotdev/learn-web-security/internal/auth/passwords"
 	"github.com/bootdotdev/learn-web-security/internal/auth/sessions"
 	"github.com/bootdotdev/learn-web-security/internal/httpx"
 	"github.com/bootdotdev/learn-web-security/internal/logging"
 	"github.com/bootdotdev/learn-web-security/internal/templates"
 )
+
+const reauthenticationMessage = "Re-enter your current password to change your email."
 
 type pageView struct {
 	templates.Page
@@ -76,8 +79,15 @@ func (handler *Handler) UpdateEmail(responseWriter http.ResponseWriter, request 
 		return
 	}
 	email, emailErr := httpx.FormValue(request, "email")
-	if emailErr != nil {
+	currentPassword, passwordErr := httpx.FormValue(request, "currentPassword")
+	if emailErr != nil || passwordErr != nil {
 		handler.errorPage(responseWriter, http.StatusBadRequest, "Invalid Request", "The submitted form is invalid.")
+		return
+	}
+	if currentPassword == "" || !passwords.Verify(currentPassword, current.User.PasswordHash) {
+		if err := handler.renderPage(responseWriter, http.StatusForbidden, current, reauthenticationMessage); err != nil {
+			handler.internalError(responseWriter, request, err)
+		}
 		return
 	}
 	if email == "" {
