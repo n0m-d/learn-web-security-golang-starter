@@ -24,7 +24,7 @@ const (
 	challengeTTL                 = 5 * time.Minute
 	challengeAttempts            = 5
 	defaultBackupCodeCount       = 8
-	totpPeriodSeconds      int64 = 30
+	totpPeriodSeconds      int64 = 30 // authenticator and server share this window length
 )
 
 type Challenge struct {
@@ -98,21 +98,37 @@ func (store *Store) Verify(code, secret string) bool {
 	return verifyAt(code, secret, store.now())
 }
 
+// verifyAt checks that the authenticator code matches this 30s window. It does not record use.
 func verifyAt(code, secret string, timestamp time.Time) bool {
 	if code == "" {
 		return false
 	}
 	valid, err := totp.ValidateCustom(code, secret, timestamp, totp.ValidateOpts{
 		Period:    uint(totpPeriodSeconds),
-		Skew:      0,
+		Skew:      0, // only the current window; previous/next codes fail
 		Digits:    otp.DigitsSix,
 		Algorithm: otp.AlgorithmSHA1,
 	})
 	return err == nil && valid
 }
 
+// VerifyAndConsume: valid now, and this 30s window not already used (replay).
 func (store *Store) VerifyAndConsume(ctx context.Context, userID int64, code, secret string) (bool, error) {
-	return verifyAt(code, secret, store.now()), nil
+	now := store.now() // one timestamp for both the code check and the step
+	if !verifyAt(code, secret, now) {
+		return false, nil // wrong, empty, or from another window
+	}
+	// same window => same code; storing the step spends that code without saving the digits
+	timeStep := now.Unix() / totpPeriodSeconds
+	result, err := store.queries.ConsumeTOTPStep(ctx, dbgen.ConsumeTOTPStepParams{TimeStep: &timeStep, UserID: userID})
+	if err != nil {
+		return false, fmt.Errorf("consume TOTP time step: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("count consumed TOTP time steps: %w", err)
+	}
+	return rowsAffected == 1, nil // 1 = first use; 0 = this window already spent
 }
 
 func (store *Store) ConfirmEnrollment(ctx context.Context, userID int64) ([]string, error) {
