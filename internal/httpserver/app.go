@@ -214,6 +214,7 @@ func New(database *sql.DB, logger *logging.Logger, options Options) (*Applicatio
 		mainMux,
 		recoverPanics(logger, renderer),
 		NoSniff,
+		ContentSecurityPolicy,
 	)
 	return &Application{Handler: handler, publicRoot: publicRoot}, nil
 }
