@@ -107,7 +107,7 @@ func ContentSecurityPolicy(next http.Handler) http.Handler {
 			"default-src 'self'; script-src 'self' 'nonce-"+nonce+"'; style-src 'self' frame-ancestors 'self'; img-src 'self' data:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'",
 		)
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
-
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		next.ServeHTTP(w, r)
 	})
 }
