@@ -76,6 +76,7 @@ func (handler *authHandler) Login(responseWriter http.ResponseWriter, request *h
 		handler.invalidForm(responseWriter)
 		return
 	}
+	email = accounts.NormalizeEmail(email)
 	returnTo := safeReturnTo(returnToValue)
 
 	user, found, err := handler.accounts.FindUserByEmail(request.Context(), email)
@@ -84,7 +85,7 @@ func (handler *authHandler) Login(responseWriter http.ResponseWriter, request *h
 		return
 	}
 	if !found || !passwords.Verify(password, user.PasswordHash) {
-		_ = handler.logger.Event("login_attempt", map[string]any{
+		handler.logAuthenticationEvent(request, "login_attempt", map[string]any{
 			"email":         email,
 			"success":       false,
 			"failureReason": loginFailureReason(found),
@@ -117,7 +118,7 @@ func (handler *authHandler) Login(responseWriter http.ResponseWriter, request *h
 		handler.internalError(responseWriter, request, err)
 		return
 	}
-	_ = handler.logger.Event("login_attempt", map[string]any{
+	handler.logAuthenticationEvent(request, "login_attempt", map[string]any{
 		"email":     user.Email,
 		"userId":    user.ID,
 		"role":      user.Role,
@@ -165,6 +166,7 @@ func (handler *authHandler) Signup(responseWriter http.ResponseWriter, request *
 		handler.invalidForm(responseWriter)
 		return
 	}
+	email = accounts.NormalizeEmail(email)
 	displayName = strings.TrimSpace(displayName)
 	if email == "" || displayName == "" || password == "" {
 		_ = handler.renderSignup(responseWriter, http.StatusBadRequest, "All fields are required")
@@ -290,6 +292,10 @@ func (handler *authHandler) internalError(responseWriter http.ResponseWriter, re
 	if renderErr := httpx.RespondWithErrorPage(responseWriter, handler.renderer, http.StatusInternalServerError, "Unhandled Error", err.Error()); renderErr != nil {
 		http.Error(responseWriter, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
+}
+
+func (handler *authHandler) logAuthenticationEvent(_ *http.Request, eventName string, fields map[string]any) {
+	_ = handler.logger.Event(eventName, fields)
 }
 
 func safeReturnTo(value string) string {

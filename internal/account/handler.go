@@ -50,6 +50,7 @@ type totpSetupView struct {
 type totpEnabledView struct {
 	templates.Page
 	DisplayName string
+	CSRFToken   string
 }
 
 type totpBackupCodesView struct {
@@ -75,7 +76,7 @@ func (handler *Handler) Page(responseWriter http.ResponseWriter, request *http.R
 
 func (handler *Handler) UpdateEmail(responseWriter http.ResponseWriter, request *http.Request) {
 	current, ok := handler.requireAuth(responseWriter, request)
-	if !ok {
+	if !ok || !handler.verifyCSRF(responseWriter, request, current.Session.CSRFToken) {
 		return
 	}
 	email, emailErr := httpx.FormValue(request, "email")
@@ -90,6 +91,7 @@ func (handler *Handler) UpdateEmail(responseWriter http.ResponseWriter, request 
 		}
 		return
 	}
+	email = accounts.NormalizeEmail(email)
 	if email == "" {
 		if err := handler.renderPage(responseWriter, http.StatusBadRequest, current, "Email is required."); err != nil {
 			handler.internalError(responseWriter, request, err)
@@ -129,7 +131,7 @@ func (handler *Handler) TOTPPage(responseWriter http.ResponseWriter, request *ht
 	}
 	if current.User.HasTOTP {
 		if err := handler.renderer.Render(responseWriter, http.StatusOK, "totp-enabled", totpEnabledView{
-			Title: "Two-Step Verification Enabled", DisplayName: current.User.DisplayName,
+			Title: "Two-Step Verification Enabled", DisplayName: current.User.DisplayName, CSRFToken: current.Session.CSRFToken,
 		}); err != nil {
 			handler.internalError(responseWriter, request, err)
 		}
@@ -194,7 +196,7 @@ func (handler *Handler) ConfirmTOTP(responseWriter http.ResponseWriter, request 
 
 func (handler *Handler) DisableTOTP(responseWriter http.ResponseWriter, request *http.Request) {
 	current, ok := handler.requireRecentAuth(responseWriter, request)
-	if !ok {
+	if !ok || !handler.verifyCSRF(responseWriter, request, current.Session.CSRFToken) {
 		return
 	}
 	if !current.User.HasTOTP {
@@ -246,6 +248,19 @@ func (handler *Handler) requireRecentAuth(responseWriter http.ResponseWriter, re
 		return accounts.CurrentSession{}, false
 	}
 	return current, true
+}
+
+func (handler *Handler) verifyCSRF(responseWriter http.ResponseWriter, request *http.Request, expectedToken string) bool {
+	actualToken, err := httpx.FormValue(request, "csrfToken")
+	if err != nil {
+		handler.errorPage(responseWriter, http.StatusBadRequest, "Invalid Request", "The submitted form is invalid.")
+		return false
+	}
+	if sessions.CSRFTokensMatch(expectedToken, actualToken) {
+		return true
+	}
+	handler.errorPage(responseWriter, http.StatusForbidden, "Forbidden", "Your request could not be verified.")
+	return false
 }
 
 func (handler *Handler) errorPage(responseWriter http.ResponseWriter, statusCode int, heading, message string) {

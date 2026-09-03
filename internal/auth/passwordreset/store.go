@@ -2,17 +2,15 @@ package passwordreset
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"time"
 
 	"github.com/bootdotdev/learn-web-security/internal/database/dbgen"
 )
+
+const tokenTTL = 30 * 24 * time.Hour
 
 type Token struct {
 	ID        int64
@@ -34,18 +32,24 @@ func NewStore(database *sql.DB) *Store {
 
 func (store *Store) Create(ctx context.Context, userID int64) (Token, error) {
 	now := store.now().UTC()
-	tokenBytes := make([]byte, 32)
-	if _, err := io.ReadFull(rand.Reader, tokenBytes); err != nil {
-		return Token{}, fmt.Errorf("generate password reset token: %w", err)
-	}
-	value := hex.EncodeToString(tokenBytes)
-	expiresAt := now.Add(15 * time.Minute)
+	value := fmt.Sprintf("reset-%d-%d", userID, now.UnixNano())
+	expiresAt := now.Add(tokenTTL)
 	if err := store.queries.CreatePasswordResetToken(ctx, dbgen.CreatePasswordResetTokenParams{
-		UserID: userID, TokenHash: hashToken(value), ExpiresAt: formatTimestamp(expiresAt),
+		UserID:    userID,
+		TokenHash: hashToken(value),
+		ExpiresAt: formatTimestamp(expiresAt),
 	}); err != nil {
 		return Token{}, fmt.Errorf("create password reset token: %w", err)
 	}
-	return Token{UserID: userID, ExpiresAt: expiresAt, Value: value}, nil
+	token, found, err := store.Validate(ctx, value)
+	if err != nil {
+		return Token{}, err
+	}
+	if !found {
+		return Token{}, errors.New("created password reset token was not found")
+	}
+	token.Value = value
+	return token, nil
 }
 
 func (store *Store) Validate(ctx context.Context, value string) (Token, bool, error) {
@@ -57,87 +61,65 @@ func (store *Store) Validate(ctx context.Context, value string) (Token, bool, er
 		return Token{}, false, fmt.Errorf("find password reset token: %w", err)
 	}
 	expiresAt, err := time.Parse(time.RFC3339, row.ExpiresAt)
-	if err != nil || !store.now().Before(expiresAt) || row.UsedAt != nil {
+	if err != nil || row.UsedAt != nil || !store.now().Before(expiresAt) {
 		return Token{}, false, nil
 	}
 	return Token{ID: row.ID, UserID: row.UserID, ExpiresAt: expiresAt, UsedAt: row.UsedAt, Value: value}, true, nil
 }
 
 func (store *Store) ResetPassword(ctx context.Context, value, passwordHash string) (bool, error) {
+	now := formatTimestamp(store.now().UTC())
 	transaction, err := store.database.BeginTx(ctx, nil)
 	if err != nil {
 		return false, fmt.Errorf("begin password reset: %w", err)
 	}
-	// Rollback aborts on error or early return. After Commit it is a no-op (sql.ErrTxDone).
 	defer transaction.Rollback()
-
-	/*
-	   defer transaction.Rollback() is a safety net.
-
-	   If everything succeeds, Commit() runs and permanently saves
-	   the transaction. Later, the deferred Rollback() still runs,
-	   but the transaction is already finished, so database/sql
-	   returns sql.ErrTxDone and nothing is undone.
-
-	   ErrTxDone( transaction has already been committed or rolled back, so it can't be used anymore.)
-
-	   If anything fails or the function returns early before Commit(),
-	   the deferred Rollback() aborts the transaction automatically.
-
-	   That's why Rollback() is deferred at the top:
-	   every failure path is covered automatically, and the changes
-	   are kept only when all steps succeed and Commit() is called.
-	*/
-
 	queries := store.queries.WithTx(transaction)
-	now := formatTimestamp(store.now().UTC())
 	userID, err := queries.ConsumePasswordResetToken(ctx, dbgen.ConsumePasswordResetTokenParams{
 		Now:       &now,
 		TokenHash: hashToken(value),
 	})
 	if errors.Is(err, sql.ErrNoRows) {
+		if commitErr := transaction.Commit(); commitErr != nil {
+			return false, fmt.Errorf("commit unused password reset: %w", commitErr)
+		}
 		return false, nil
 	}
 	if err != nil {
 		return false, fmt.Errorf("consume password reset token: %w", err)
 	}
 	result, err := queries.ResetUserPasswordHash(ctx, dbgen.ResetUserPasswordHashParams{
-		PasswordHash: passwordHash, Now: now, UserID: userID,
+		PasswordHash: passwordHash,
+		Now:          now,
+		UserID:       userID,
 	})
 	if err != nil {
 		return false, fmt.Errorf("reset user password: %w", err)
 	}
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		return false, fmt.Errorf("read password reset: %w", err)
+		return false, fmt.Errorf("count reset users: %w", err)
 	}
 	if rowsAffected != 1 {
-		return false, nil
+		return false, errors.New("password reset user was not found")
 	}
-	if err := queries.ConsumeRemainingPasswordResetTokens(ctx, dbgen.ConsumeRemainingPasswordResetTokensParams{
-		Now:    &now,
-		UserID: userID,
-	}); err != nil {
-		return false, fmt.Errorf("invalidate remaining password reset tokens: %w", err)
+	if err := queries.ConsumeRemainingPasswordResetTokens(ctx, dbgen.ConsumeRemainingPasswordResetTokensParams{Now: &now, UserID: userID}); err != nil {
+		return false, fmt.Errorf("consume remaining password reset tokens: %w", err)
 	}
-	if err := queries.RevokeUserSessions(ctx, dbgen.RevokeUserSessionsParams{
-		Now:    &now,
-		UserID: userID,
-	}); err != nil {
+	if err := queries.RevokeUserSessions(ctx, dbgen.RevokeUserSessionsParams{Now: &now, UserID: userID}); err != nil {
 		return false, fmt.Errorf("revoke user sessions: %w", err)
 	}
 	if err := queries.DeleteTOTPLoginChallengesForUser(ctx, userID); err != nil {
 		return false, fmt.Errorf("delete TOTP login challenges: %w", err)
 	}
-	if err := transaction.Commit(); err != nil { //transaction committed
+	if err := transaction.Commit(); err != nil {
 		return false, fmt.Errorf("commit password reset: %w", err)
 	}
 	return true, nil
 }
 
-func hashToken(token string) string {
-	tokenHash := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(tokenHash[:]) // array -> slice -> hex string
+func hashToken(value string) string {
+	return value
 }
 
 func formatTimestamp(timestamp time.Time) string {
