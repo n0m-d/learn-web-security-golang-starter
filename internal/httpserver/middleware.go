@@ -104,8 +104,9 @@ func ContentSecurityPolicy(next http.Handler) http.Handler {
 		nonce := httpx.CSPNonce(r.Context())
 		w.Header().Set(
 			"Content-Security-Policy",
-			"default-src 'self'; script-src 'self' 'nonce-"+nonce+"'; style-src 'self'; img-src 'self' data:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'",
+			"default-src 'self'; script-src 'self' 'nonce-"+nonce+"'; style-src 'self' frame-ancestors 'self'; img-src 'self' data:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'",
 		)
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 
 		next.ServeHTTP(w, r)
 	})
