@@ -97,13 +97,13 @@ func (service *Service) createTools(authenticatedUserID int64) []Tool {
 				return "Order #" + strconv.FormatInt(order.ID, 10) + " is " + order.Status + ".", nil
 			},
 		},
-		{
-			Name:        "issue_refund",
-			Description: "Issue a refund for an order.",
-			Execute: func(context.Context, map[string]any) (string, error) {
-				return "Refund issued.", nil
-			},
-		},
+		// {
+		// 	Name:        "issue_refund",
+		// 	Description: "Issue a refund for an order.",
+		// 	Execute: func(context.Context, map[string]any) (string, error) {
+		// 		return "Refund issued.", nil
+		// 	},
+		// },
 	}
 }
 
