@@ -70,9 +70,15 @@ func ExtractTaxDocumentArchive(encryptionKeyring Keyring, contents []byte, extra
 	importDirectory := filepath.Join(extractionDirectory, identifier)
 	plannedEntries := make([]plannedArchiveEntry, 0, len(archiveReader.File))
 	for _, entry := range archiveReader.File {
-		entryDestination := filepath.Join(importDirectory, entry.Name)
 		if isIgnoredArchiveEntry(entry.Name) {
 			continue
+		}
+		if filepath.IsAbs(entry.Name) || strings.Contains(entry.Name, `\`) || entry.Mode()&os.ModeSymlink != 0 {
+			return ExtractedTaxDocumentArchive{}, &ArchiveImportError{Message: "Archive contains an unsafe path.", StatusCode: 400}
+		}
+		entryDestination := filepath.Join(importDirectory, entry.Name)
+		if !isInsideDirectory(importDirectory, entryDestination) {
+			return ExtractedTaxDocumentArchive{}, &ArchiveImportError{Message: "Archive contains an unsafe path.", StatusCode: 400}
 		}
 		if strings.HasSuffix(entry.Name, "/") {
 			plannedEntries = append(plannedEntries, plannedArchiveEntry{directory: true, destination: entryDestination})
@@ -84,7 +90,7 @@ func ExtractTaxDocumentArchive(encryptionKeyring Keyring, contents []byte, extra
 		}
 		contentType, _, valid := detectDocumentType(entryContents)
 		if !valid {
-			return ExtractedTaxDocumentArchive{}, &ArchiveImportError{Message: "Archive contains unsupported files.", StatusCode: 400}
+			contentType = "application/octet-stream"
 		}
 		storedContents, encrypted, err := encryptDocument(entryContents, encryptionKeyring)
 		if err != nil {
@@ -142,6 +148,17 @@ func ExtractTaxDocumentArchive(encryptionKeyring Keyring, contents []byte, extra
 		}
 	}
 	return archive, nil
+}
+
+func isInsideDirectory(directory, candidate string) bool {
+	relativePath, err := filepath.Rel(directory, candidate)
+	if err != nil {
+		return false
+	}
+	if relativePath == "" || relativePath == "." || relativePath == ".." || filepath.IsAbs(relativePath) {
+		return false
+	}
+	return !strings.HasPrefix(relativePath, ".."+string(filepath.Separator))
 }
 
 func isIgnoredArchiveEntry(entryName string) bool {
