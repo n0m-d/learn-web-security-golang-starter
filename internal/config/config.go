@@ -40,6 +40,7 @@ type Config struct {
 	ActiveEncryptionKeyVersion string
 	EncryptionKeys             map[string][32]byte
 	DownloadSigningKey         [32]byte
+	TrustedProxyHops           int
 }
 
 type AttackerLabConfig struct {
@@ -75,6 +76,10 @@ func Parse(environment map[string]string, workingDirectory string) (Config, erro
 		return Config{}, err
 	}
 	downloadSigningKey, err := parseKey(downloadSigningKeyValue, "DOWNLOAD_SIGNING_KEY")
+	if err != nil {
+		return Config{}, err
+	}
+	trustedProxyHops, err := parseNonNegativeInteger(valueOrDefault(environment, "TRUST_PROXY_HOPS", "0"), "TRUST_PROXY_HOPS")
 	if err != nil {
 		return Config{}, err
 	}
@@ -118,6 +123,7 @@ func Parse(environment map[string]string, workingDirectory string) (Config, erro
 		ActiveEncryptionKeyVersion: activeEncryptionKeyVersion,
 		EncryptionKeys:             encryptionKeys,
 		DownloadSigningKey:         downloadSigningKey,
+		TrustedProxyHops:           trustedProxyHops,
 	}, nil
 }
 

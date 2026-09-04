@@ -45,6 +45,7 @@ type Options struct {
 	PawPalAPIKey            string
 	AcornFulfillmentDelay   time.Duration
 	DownloadSigningKey      [32]byte
+	TrustedProxyHops        int
 	EncryptionKeyring       *storage.Keyring
 	DataDirectory           string
 	FixtureDirectory        string
