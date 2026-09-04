@@ -4,6 +4,7 @@ go 1.27.0
 
 require (
 	github.com/go-webauthn/webauthn v0.17.4
+	github.com/joho/godotenv v1.5.1
 	github.com/pquerna/otp v1.4.0
 	github.com/pressly/goose/v3 v3.27.3
 	modernc.org/sqlite v1.56.0

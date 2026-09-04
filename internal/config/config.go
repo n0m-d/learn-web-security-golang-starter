@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"net/url"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 const (
@@ -36,6 +39,7 @@ type Config struct {
 	MaxPublicProductResults    int
 	ActiveEncryptionKeyVersion string
 	EncryptionKeys             map[string][32]byte
+	DownloadSigningKey         [32]byte
 }
 
 type AttackerLabConfig struct {
@@ -43,14 +47,38 @@ type AttackerLabConfig struct {
 }
 
 func Load(workingDirectory string) (Config, error) {
-	return Parse(processEnvironment(), workingDirectory)
+	environment, err := loadEnvironment(filepath.Join(workingDirectory, ".env"))
+	if err != nil {
+		return Config{}, err
+	}
+
+	return Parse(environment, workingDirectory)
 }
 
 func LoadAttackerLab(workingDirectory string) (AttackerLabConfig, error) {
-	return ParseAttackerLab(processEnvironment())
+	environment, err := loadEnvironment(filepath.Join(workingDirectory, ".env"))
+	if err != nil {
+		return AttackerLabConfig{}, err
+	}
+
+	return ParseAttackerLab(environment)
 }
 
 func Parse(environment map[string]string, workingDirectory string) (Config, error) {
+	pawPalAPIKey, err := requireEnvironmentVariable(environment, "PAWPAL_API_KEY")
+	if err != nil {
+		return Config{}, err
+	}
+
+	downloadSigningKeyValue, err := requireEnvironmentVariable(environment, "DOWNLOAD_SIGNING_KEY")
+	if err != nil {
+		return Config{}, err
+	}
+	downloadSigningKey, err := parseKey(downloadSigningKeyValue, "DOWNLOAD_SIGNING_KEY")
+	if err != nil {
+		return Config{}, err
+	}
+
 	port, err := parseNonNegativeInteger(valueOrDefault(environment, "PORT", strconv.Itoa(defaultPort)), "PORT")
 	if err != nil {
 		return Config{}, err
@@ -78,11 +106,6 @@ func Parse(environment map[string]string, workingDirectory string) (Config, erro
 		databasePath = filepath.Join(workingDirectory, "data", defaultDatabaseFilename)
 	}
 
-	pawPalAPIKey, err := requireEnvironmentVariable(environment, "PAWPAL_API_KEY")
-	if err != nil {
-		return Config{}, err
-	}
-
 	return Config{
 		PawPalAPIKey:               pawPalAPIKey,
 		AppOrigin:                  appOrigin,
@@ -94,6 +117,7 @@ func Parse(environment map[string]string, workingDirectory string) (Config, erro
 		MaxPublicProductResults:    MaxPublicProductResults,
 		ActiveEncryptionKeyVersion: activeEncryptionKeyVersion,
 		EncryptionKeys:             encryptionKeys,
+		DownloadSigningKey:         downloadSigningKey,
 	}, nil
 }
 
@@ -108,15 +132,28 @@ func ParseAttackerLab(environment map[string]string) (AttackerLabConfig, error) 
 	return AttackerLabConfig{Port: port}, nil
 }
 
-func processEnvironment() map[string]string {
+func loadEnvironment(dotenvPath string) (map[string]string, error) {
 	environment := make(map[string]string)
+	dotenvValues, err := godotenv.Read(dotenvPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("read %s: %w", dotenvPath, err)
+	}
+	maps.Copy(environment, dotenvValues)
 	for _, entry := range os.Environ() {
 		name, value, found := strings.Cut(entry, "=")
 		if found {
 			environment[name] = value
 		}
 	}
-	return environment
+	return environment, nil
+}
+
+func requireEnvironmentVariable(environment map[string]string, name string) (string, error) {
+	value := environment[name]
+	if value == "" {
+		return "", fmt.Errorf("missing required environment variable: %s", name)
+	}
+	return value, nil
 }
 
 func valueOrDefault(environment map[string]string, name, fallback string) string {
@@ -151,6 +188,14 @@ func parseDelay(value string) (time.Duration, error) {
 		return 0, errors.New("ACORN_FULFILLMENT_DELAY_MS is too large")
 	}
 	return time.Duration(milliseconds * float64(time.Millisecond)), nil
+}
+
+func parseKey(value, name string) ([32]byte, error) {
+	decoded, err := hex.DecodeString(value)
+	if err != nil || len(decoded) != 32 {
+		return [32]byte{}, fmt.Errorf("%s must be exactly 64 hexadecimal characters", name)
+	}
+	return [32]byte(decoded), nil
 }
 
 func parseOptionalEncryptionKeys(environment map[string]string) (string, map[string][32]byte, error) {
@@ -224,12 +269,4 @@ func normalizeEncryptionVersion(version string) (string, error) {
 		}
 	}
 	return normalized, nil
-}
-
-func requireEnvironmentVariable(environment map[string]string, name string) (string, error) {
-	value := environment[name]
-	if value == "" {
-		return "", fmt.Errorf("missing required environment variable: %s", name)
-	}
-	return value, nil
 }
