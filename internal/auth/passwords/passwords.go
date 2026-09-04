@@ -61,6 +61,15 @@ func Verify(password, encodedHash string) bool {
 	return subtle.ConstantTimeCompare(candidate, parsedHash.derivedKey) == 1
 }
 
-func NeedsRehash(string) bool {
+func NeedsRehash(encodedHash string) bool {
+	if _, ok := decodeLegacyHash(encodedHash); ok {
+		return true
+	}
+	parsedHash, ok := parseArgon2idHash(encodedHash)
+
+	if !ok || parsedHash.version != argon2.Version || parsedHash.memoryKiB != argon2idMemoryKiB || parsedHash.iterations != argon2idIterations || parsedHash.parallelism != argon2idParallelism {
+		return true
+	}
+
 	return false
 }

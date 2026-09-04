@@ -99,6 +99,9 @@ func encodedStaleArgon2id() string {
 
 func postForm(path string, values url.Values) int {
 	origin := strings.TrimRight(os.Getenv("APP_ORIGIN"), "/")
+	if origin == "" {
+		origin = "http://localhost:3030"
+	}
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	request, err := http.NewRequest(http.MethodPost, origin+path, strings.NewReader(values.Encode()))
 	if err != nil {

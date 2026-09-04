@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -95,6 +96,10 @@ func (handler *authHandler) Login(responseWriter http.ResponseWriter, request *h
 		if err := handler.renderLogin(responseWriter, http.StatusUnauthorized, "Invalid email or password", returnTo); err != nil {
 			handler.internalError(responseWriter, request, err)
 		}
+		return
+	}
+	if err := handler.rehashPasswordIfNeeded(request.Context(), user, password); err != nil {
+		handler.internalError(responseWriter, request, err)
 		return
 	}
 
@@ -315,4 +320,15 @@ func loginFailureReason(userFound bool) string {
 		return "password mismatch"
 	}
 	return "email not found"
+}
+
+func (handler *authHandler) rehashPasswordIfNeeded(ctx context.Context, user accounts.User, password string) error {
+	if !passwords.NeedsRehash(user.PasswordHash) {
+		return nil
+	}
+	passwordHash, err := passwords.Hash(password)
+	if err != nil {
+		return err
+	}
+	return handler.accounts.UpdatePasswordHash(ctx, user.ID, passwordHash)
 }
