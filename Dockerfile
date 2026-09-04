@@ -14,7 +14,7 @@ WORKDIR /app
 COPY --from=build --chown=bearly:bearly /out/bearly-secure ./bearly-secure
 COPY --from=build --chown=bearly:bearly /out/bearly-attacker-lab ./bearly-attacker-lab
 COPY --chown=bearly:bearly attacker-lab ./attacker-lab
-COPY --chown=bearly:bearly data/uploads/mystery-shack-tax-exemption.pdf ./data/uploads/mystery-shack-tax-exemption.pdf
+COPY --chown=bearly:bearly data/fixtures ./data/fixtures
 COPY --chown=bearly:bearly web ./web
 RUN chown bearly:bearly ./data
 

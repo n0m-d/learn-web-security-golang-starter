@@ -252,7 +252,11 @@ func request(ctx context.Context, client *http.Client, path string) (*http.Respo
 }
 
 func origin() string {
-	return strings.TrimRight(os.Getenv("APP_ORIGIN"), "/")
+	origin := strings.TrimRight(os.Getenv("APP_ORIGIN"), "/")
+	if origin == "" {
+		origin = "http://localhost:3030"
+	}
+	return origin
 }
 
 func writeResult(output result) {

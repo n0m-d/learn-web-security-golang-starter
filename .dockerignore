@@ -5,5 +5,4 @@ tmp/
 data/*.sqlite*
 data/*.log
 data/uploads/*
-!data/uploads/mystery-shack-tax-exemption.pdf
 data/bulk-tax-documents/
