@@ -19,12 +19,23 @@ type Logger struct {
 const redactedValue = "[REDACTED]"
 
 var sensitiveFields = map[string]struct{}{
-	"sessionId":   {},
-	"resetToken":  {},
-	"resetLink":   {},
-	"secret":      {},
-	"adminNotes":  {},
-	"storagePath": {},
+	"sessionId":          {},
+	"resetToken":         {},
+	"resetLink":          {},
+	"secret":             {},
+	"adminNotes":         {},
+	"storagePath":        {},
+	"email":              {},
+	"originalName":       {},
+	"shippingName":       {},
+	"shippingAddress":    {},
+	"shippingCity":       {},
+	"shippingRegion":     {},
+	"shippingPostalCode": {},
+	"shippingCountry":    {},
+	"shippingPhone":      {},
+	"shippingEmail":      {},
+	"shippingCompany":    {},
 }
 
 func Open(filePath string) (*Logger, error) {
