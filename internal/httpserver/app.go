@@ -213,8 +213,21 @@ func New(database *sql.DB, logger *logging.Logger, options Options) (*Applicatio
 		}
 	})
 
-	dynamicHandler := validateRequestOrigin(options.AppOrigin, renderer)(dynamicMux)
+	rateLimitOptions := rateLimitOptions{
+		window:  time.Minute,
+		maximum: 100,
+		key:     clientIPKeyWithTrustedProxies(options.TrustedProxyHops),
+		onLimit: func(responseWriter http.ResponseWriter, request *http.Request, state rateLimitState) {
+			http.Error(responseWriter, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
+		},
+	}
+	rateLimitMiddleware := fixedWindowRateLimiter(rateLimitOptions)
 
+	dynamicHandler := applyMiddleware(
+		dynamicMux,
+		rateLimitMiddleware,
+		validateRequestOrigin(options.AppOrigin, renderer),
+	)
 	mainMux := http.NewServeMux()
 	mainMux.HandleFunc("GET /health", func(responseWriter http.ResponseWriter, _ *http.Request) {
 		httpx.RespondWithJSON(responseWriter, http.StatusOK, map[string]any{"ok": true, "app": "bearly-secure"})
